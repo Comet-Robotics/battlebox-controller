@@ -4,7 +4,7 @@
 // Amadeus - Team 2 Orange (Studio Side)
 
 // i2c and screen
-#include <Wire.h> 
+#include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 // ESP NOW
@@ -21,12 +21,12 @@
 #include "bitmaps.h"
 
 // Changable Parameters
-#define NUM_SEC_DEFAULT 3*60
+#define NUM_SEC_DEFAULT 3 * 60
 
 // Screen parameters
 #define SSD1306_NO_SPLASH
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+#define SCREEN_WIDTH 128    // OLED display width, in pixels
+#define SCREEN_HEIGHT 32    // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 
 // Create display object over i2c
@@ -35,8 +35,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // Create soundboard object using serial 2 (GPIO16 = RX, GPIO17 = TX)
 DY::Player soundboard(&Serial2);
 bool resetSoundLevel = false;
-
-
 
 // Track current state of system (controlled by Arcadian)
 StateName currentState = IDLE;
@@ -54,9 +52,9 @@ bool retrySend = false;
 
 // Active low buttons with internal pull-up resistors
 OneButton assistResetButton = OneButton(
-  ASSIST_RESET_BUTTON,  // Input pin for the button
-  true,        // Button is active LOW
-  true         // Enable internal pull-up resistor
+    ASSIST_RESET_BUTTON, // Input pin for the button
+    true,                // Button is active LOW
+    true                 // Enable internal pull-up resistor
 );
 OneButton victory1Button = OneButton(VICTORY_T1_BUTTON, true, true);
 OneButton victory2Button = OneButton(VICTORY_T2_BUTTON, true, true);
@@ -70,9 +68,9 @@ OneButton *timeUpButton;
 
 // Active low button with EXTERNAL pull-up resistor
 OneButton startButton = OneButton(
-  MATCH_START_BUTTON,  // Input pin for the button
-  true,        // Button is active LOW
-  false         // No internal pull-up resistor
+    MATCH_START_BUTTON, // Input pin for the button
+    true,               // Button is active LOW
+    false               // No internal pull-up resistor
 );
 
 uint16_t seconds = NUM_SEC_DEFAULT;
@@ -87,12 +85,14 @@ bool flickerLedState;
 // Index of currently displayed logo on screen
 uint8_t currentDisplay = 0;
 
-void setup() {
+void setup()
+{
   // Initilize serial communication
   Serial.begin(115200);
   Serial.print("Initializing SSD1306 Driver...");
   // Display initilization
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  {
     Serial.println(F("SSD1306 allocation failed"));
     return;
   }
@@ -126,13 +126,13 @@ void setup() {
 
   Serial.println("DONE!");
 
-
   Serial.print("Initializing ESP NOW");
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
   Serial.print(".");
   // Init ESP-NOW
-  if (esp_now_init() != ESP_OK) {
+  if (esp_now_init() != ESP_OK)
+  {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
@@ -147,20 +147,20 @@ void setup() {
 
   // Register broadcast address for ESP Now
   memcpy(peerInfo_Arcadian.peer_addr, broadcastAddress, 6);
-  peerInfo_Arcadian.channel = 0;  
+  peerInfo_Arcadian.channel = 0;
   peerInfo_Arcadian.encrypt = false;
-  if (esp_now_add_peer(&peerInfo_Arcadian) != ESP_OK) {
+  if (esp_now_add_peer(&peerInfo_Arcadian) != ESP_OK)
+  {
     Serial.println("Failed to add ESP now peer");
     return;
   }
   Serial.println(".SUCCESS!");
-  
+
   Serial.print("Configuring sound board...");
   // Initilize soundboard and set volume
   soundboard.begin();
   soundboard.setVolume(30); // Range 0-30
   Serial.println("DONE!");
-
 
   // Initilize LED pins
   Serial.print("Configuring LED outputs...");
@@ -179,19 +179,27 @@ void setup() {
   Serial.println("Setup complete!");
 }
 
-void loop() {
+void loop()
+{
   // State controls
   // Change state from Arcadian has priority
-  if (reqState || changeState){
-    if (changeState){
+  if (reqState || changeState)
+  {
+    if (changeState)
+    {
       currentState = changeState;
       changeState = NO_STATE;
-    } else if (reqState){
+    }
+    else if (reqState)
+    {
       currentState = reqState;
-      result = esp_now_send(broadcastAddress, (uint8_t *) &reqState, sizeof(reqState));
-      if (result == ESP_OK){
+      result = esp_now_send(broadcastAddress, (uint8_t *)&reqState, sizeof(reqState));
+      if (result == ESP_OK)
+      {
         // Serial.println("State Request Sent Sucessfully!");
-      } else {
+      }
+      else
+      {
         Serial.println("Arcadian not responding! :(");
       }
     }
@@ -202,14 +210,18 @@ void loop() {
 
     // Run state change actions
     runStateChangeActions(currentState);
-
-  } else if (retrySend) {
+  }
+  else if (retrySend)
+  {
     // Retry sending state to Arcadian
     Serial.println("Retrying Arcadian state update");
-    result = esp_now_send(broadcastAddress, (uint8_t *) &currentState, sizeof(currentState));
-    if (result == ESP_OK){
+    result = esp_now_send(broadcastAddress, (uint8_t *)&currentState, sizeof(currentState));
+    if (result == ESP_OK)
+    {
       retrySend = false;
-    } else {
+    }
+    else
+    {
       Serial.println("Arcadian STILL not responding! :(");
     }
   }
@@ -237,106 +249,141 @@ void loop() {
   currentTick = millis();
 
   // Flicker match start or assist button
-  if (currentTick - lastButtonFlickerTick >= 500 && (currentState == READY_BOTH || currentState == ASSIST)) {
+  if (currentTick - lastButtonFlickerTick >= 500 && (currentState == READY_BOTH || currentState == ASSIST))
+  {
     flickerLedState = !flickerLedState;
-    if (currentState == READY_BOTH){
+    if (currentState == READY_BOTH)
+    {
       digitalWrite(MATCH_START_LED, flickerLedState);
-    } else {
+    }
+    else
+    {
       digitalWrite(ASSIST_RESET_LED, flickerLedState);
     }
     lastButtonFlickerTick = currentTick;
   }
 
   // Update clock every 1 second during match
-  if (currentTick - lastCountdownTick >= 1000 && (currentState == MATCH || currentState == ASSIST || currentState == PAUSED)) {
-    if (currentState == PAUSED) {
+  if (currentTick - lastCountdownTick >= 1000 && (currentState == MATCH || currentState == ASSIST || currentState == PAUSED))
+  {
+    if (currentState == PAUSED)
+    {
       flickerLedState = !flickerLedState;
-      if (flickerLedState) {
+      if (flickerLedState)
+      {
         updateClock();
-      } else {
+      }
+      else
+      {
         display.clearDisplay();
         display.display();
       }
-    } else {
+    }
+    else
+    {
       seconds--;
       updateClock();
     }
+    /* TODO
+    This is the match clock. Make this better
+    Since the time is set based on the current tick, clock drift can happen over the course of the match
+    lastCountdownTick += 1000; is probably the solution to avoid clock drift
+    */
     lastCountdownTick = currentTick;
-  } else if (currentTick - lastCountdownTick >= 2000 && (currentState != PAUSED && currentState != MATCH_END )) {
+  }
+  else if (currentTick - lastCountdownTick >= 2000 && (currentState != PAUSED && currentState != MATCH_END))
+  {
     display.clearDisplay();
-    switch (currentDisplay) {
-      case 0:
-        display.drawBitmap(0, 0, cometrobotics, 128, 32, WHITE);
-        break;
-      case 1:
-        display.drawBitmap(0, 0, utdesign, 128, 32, WHITE);
-        break;
-      default:
-        display.drawBitmap(0, 0, techtitans, 128, 32, WHITE);
+    switch (currentDisplay)
+    {
+    case 0:
+      display.drawBitmap(0, 0, cometrobotics, 128, 32, WHITE);
+      break;
+    case 1:
+      display.drawBitmap(0, 0, utdesign, 128, 32, WHITE);
+      break;
+    default:
+      display.drawBitmap(0, 0, techtitans, 128, 32, WHITE);
     }
     display.display();
-    currentDisplay = (currentDisplay + 1)%3;
+    currentDisplay = (currentDisplay + 1) % 3;
     lastCountdownTick = currentTick;
-  } else if (currentTick - lastCountdownTick >= 5000 && currentState == MATCH && resetSoundLevel) {
+  }
+  else if (currentTick - lastCountdownTick >= 5000 && currentState == MATCH && resetSoundLevel)
+  {
     soundboard.setVolume(30);
     resetSoundLevel = false;
   }
 
   // Handle tapout countdown
-  if (currentTick - lastTapoutTick >= 5000 && (currentState == TAPOUT_T1 || currentState == TAPOUT_T2)){
-    if (currentState == TAPOUT_T1) {
+  if (currentTick - lastTapoutTick >= 5000 && (currentState == TAPOUT_T1 || currentState == TAPOUT_T2))
+  {
+    if (currentState == TAPOUT_T1)
+    {
       reqState = VICTORY_T2;
-    } else {
+    }
+    else
+    {
       reqState = VICTORY_T1;
     }
   }
 
-  if (currentTick - lastReadyTick >= 1500 && (currentState == READY_BOTH)){
-    if (firstReady){
+  if (currentTick - lastReadyTick >= 1500 && (currentState == READY_BOTH))
+  {
+    if (firstReady)
+    {
       soundboard.playSpecified(BOTH_TEAM_READY_SOUND);
       firstReady = NO_STATE;
     }
   }
 }
 
-
-
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
+{
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-  if (status ==0){
+  if (status == 0)
+  {
     success = "Delivery Success :)";
     // reqState = NO_STATE;
   }
-  else{
+  else
+  {
     success = "Delivery Fail :(";
   }
 }
 
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
+{
   memcpy(&changeState, incomingData, sizeof(changeState));
   Serial.println("New state change recieved");
 }
 
-void updateClock() {
+void updateClock()
+{
   display.clearDisplay();
   Serial.print("Clock set to ");
-  Serial.print(seconds/60);
+  Serial.print(seconds / 60);
   Serial.print(":");
-  Serial.println(seconds%60);
+  Serial.println(seconds % 60);
   // Do actual clock update
-  display.setCursor(18,0);
-  display.print(seconds/60);
+  display.setCursor(18, 0);
+  display.print(seconds / 60);
   display.print(F(":"));
-  if(seconds%60 < 10){
+  if (seconds % 60 < 10)
+  {
     display.print(F("0"));
-    }
-  display.print(seconds%60);
+  }
+  display.print(seconds % 60);
   display.display();
-  if (currentState==MATCH || currentState==ASSIST){
-    if (seconds==0){
+  if (currentState == MATCH || currentState == ASSIST)
+  {
+    if (seconds == 0)
+    {
       reqState = MATCH_END;
-    } else if (seconds==6){
+    }
+    else if (seconds == 6)
+    {
       soundboard.playSpecified(END_SOUND);
     }
   }
