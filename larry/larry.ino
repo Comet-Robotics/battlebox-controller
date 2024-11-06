@@ -21,7 +21,7 @@
 #include "bitmaps.h"
 
 // Changable Parameters
-#define NUM_SEC_DEFAULT 3 * 60
+#define NUM_SEC_DEFAULT 2 * 60
 
 // Screen parameters
 #define SSD1306_NO_SPLASH
