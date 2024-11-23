@@ -3,6 +3,8 @@
 // Fred - Team 1 Green (EPICS Side)
 // Amadeus - Team 2 Orange (Studio Side)
 
+#include <Arduino.h>
+
 // i2c and screen
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -20,7 +22,7 @@
 #include "larry.h"
 #include "bitmaps.h"
 
-// Changable Parameters
+// Changeable Parameters
 #define NUM_SEC_DEFAULT 2 * 60
 
 // Screen parameters
@@ -32,8 +34,6 @@
 // Create display object over i2c
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Create soundboard object using serial 2 (GPIO16 = RX, GPIO17 = TX)
-DY::Player soundboard(&Serial2);
 bool resetSoundLevel = false;
 
 // Track current state of system (controlled by Arcadian)
@@ -85,12 +85,26 @@ bool flickerLedState;
 // Index of currently displayed logo on screen
 uint8_t currentDisplay = 0;
 
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
+void updateClock();
+void handleTimeDown();
+void handleTimeUp();
+void handleMatchStart();
+void handleMatchStop();
+void handleMatchReset();
+void handleMatchPlayPause();
+void handleMatchVictory1();
+void handleMatchVictory2();
+void handleAssistReset();
+void runStateChangeActions(StateName the_state);
+
 void setup()
 {
-  // Initilize serial communication
+  // Initialize serial communication
   Serial.begin(115200);
   Serial.print("Initializing SSD1306 Driver...");
-  // Display initilization
+  // Display initialization
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
     Serial.println(F("SSD1306 allocation failed"));
@@ -102,12 +116,12 @@ void setup()
   Serial.println("SUCCESS!");
 
   Serial.print("Configuring push buttons");
-  // Initilize internal pull-down buttons
+  // Initialize internal pull-down buttons
   stopButton = new OneButton();
   resetButton = new OneButton();
   timeDownButton = new OneButton();
   timeUpButton = new OneButton();
-  // Initilize internal pull-down button pins
+  // Initialize internal pull-down button pins
   pinMode(MATCH_STOP_BUTTON, INPUT_PULLDOWN);
   pinMode(MATCH_RESET_BUTTON, INPUT_PULLDOWN);
   pinMode(TIME_DOWN_BUTTON, INPUT_PULLDOWN);
@@ -139,7 +153,7 @@ void setup()
   Serial.print(".");
 
   // Once ESPNow is successfully Init, we will register for Send CB to
-  // get the status of Trasnmitted packet
+  // get the status of Transmitted packet
   esp_now_register_send_cb(OnDataSent);
   // Register for a callback function that will be called when data is received
   esp_now_register_recv_cb(OnDataRecv);
@@ -157,12 +171,12 @@ void setup()
   Serial.println(".SUCCESS!");
 
   Serial.print("Configuring sound board...");
-  // Initilize soundboard and set volume
+  // Initialize soundboard and set volume
   soundboard.begin();
   soundboard.setVolume(30); // Range 0-30
   Serial.println("DONE!");
 
-  // Initilize LED pins
+  // Initialize LED pins
   Serial.print("Configuring LED outputs...");
   pinMode(MATCH_START_LED, OUTPUT);
   pinMode(MATCH_STOP_LED, OUTPUT);
@@ -196,7 +210,7 @@ void loop()
       result = esp_now_send(broadcastAddress, (uint8_t *)&reqState, sizeof(reqState));
       if (result == ESP_OK)
       {
-        // Serial.println("State Request Sent Sucessfully!");
+        // Serial.println("State Request Sent Successfully!");
       }
       else
       {
@@ -356,25 +370,27 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
 {
   memcpy(&changeState, incomingData, sizeof(changeState));
-  Serial.println("New state change recieved");
+  Serial.println("New state change received");
 }
 
 void updateClock()
 {
+  uint16_t minutes = seconds / 60;
+  uint16_t actualSeconds = seconds % 60;
   display.clearDisplay();
   Serial.print("Clock set to ");
-  Serial.print(seconds / 60);
+  Serial.print(minutes);
   Serial.print(":");
-  Serial.println(seconds % 60);
+  if (actualSeconds < 10)
+    Serial.print("0");
+  Serial.println(actualSeconds);
   // Do actual clock update
   display.setCursor(18, 0);
-  display.print(seconds / 60);
+  display.print(minutes);
   display.print(F(":"));
-  if (seconds % 60 < 10)
-  {
+  if (actualSeconds < 10)
     display.print(F("0"));
-  }
-  display.print(seconds % 60);
+  display.print(actualSeconds);
   display.display();
   if (currentState == MATCH || currentState == ASSIST)
   {
@@ -388,4 +404,257 @@ void updateClock()
     }
   }
   return;
+}
+
+void handleTimeDown() {
+  if (seconds >= 10) {
+    seconds -= 10;
+    lastCountdownTick = millis();
+    updateClock();
+  }
+}
+
+void handleTimeUp() {
+    seconds += 10;
+    lastCountdownTick = millis();
+    updateClock();
+}
+
+void handleMatchStart(){
+  Serial.println("Match Started!");
+  if (currentState == IDLE){
+    soundboard.playSpecified(READY_SOUND);
+    reqState = READY_CHECK;
+  } else if (currentState == READY_BOTH) {
+    // soundboard.playSpecified(FIGHT_SOUND);
+    reqState = COUNTDOWN;
+  }
+}
+void handleMatchStop(){
+  Serial.println("Match Stopped!");
+  switch (currentState) {
+    case MATCH:
+    case ASSIST:
+    case PAUSED:
+      // soundboard.playSpecified(END_SOUND);
+      reqState = MATCH_END;
+      break;
+  }
+}
+void handleMatchReset(){
+  Serial.println("Match Reset!");
+  if (currentState != COUNTDOWN && currentState != MATCH && currentState != ASSIST && currentState != PAUSED) {
+    reqState = IDLE;
+    seconds = NUM_SEC_DEFAULT;
+  }
+    // updateClock();
+}
+void handleMatchPlayPause(){
+  Serial.println("Match Played/Paused!");
+  if (currentState == MATCH) {
+    // soundboard.playSpecified(PAUSE_SOUND);
+    reqState = PAUSED;
+    resumeState = MATCH;
+  } else if (currentState == ASSIST) {
+    soundboard.playSpecified(FIGHT_SOUND);
+    reqState = PAUSED;
+    resumeState = ASSIST;
+  }else if (currentState == PAUSED) {
+    soundboard.playSpecified(FIGHT_SOUND);
+    reqState = resumeState;
+    lastCountdownTick = millis();
+  }
+}
+void handleMatchVictory1(){
+  Serial.println("Match Victory - Team 1!");
+  if (currentState == MATCH_END) {
+    // soundboard.playSpecified(VICTORY_SOUND);
+    reqState = VICTORY_T1;
+  }
+}
+void handleMatchVictory2(){
+  Serial.println("Match Victory - Team 2!");
+  if (currentState == MATCH_END) {
+    // soundboard.playSpecified(VICTORY_SOUND);
+    reqState = VICTORY_T2;
+  }
+}
+void handleAssistReset(){
+  Serial.println("Match Assist Reset!");
+  if (currentState == ASSIST)
+    reqState = MATCH;
+}
+
+void runStateChangeActions(StateName the_state){
+    switch(the_state)
+    {
+      case IDLE        :
+        digitalWrite(MATCH_START_LED, HIGH);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case READY_CHECK :
+        soundboard.playSpecified(READY_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case READY_T1    :
+        soundboard.playSpecified(GREEN_TEAM_READY_SOUND);
+        firstReady = READY_T1;
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case READY_T2    :
+        firstReady = READY_T2;
+        soundboard.playSpecified(ORANGE_TEAM_READY_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case READY_BOTH  :
+        lastReadyTick = millis();
+        if (firstReady == READY_T1) {
+          soundboard.playSpecified(ORANGE_TEAM_READY_SOUND);
+        } else if (firstReady == READY_T2) {
+          soundboard.playSpecified(GREEN_TEAM_READY_SOUND);
+        }
+        // soundboard.playSpecified(BOTH_TEAM_READY_SOUND);
+        digitalWrite(MATCH_START_LED, HIGH);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        flickerLedState = HIGH;
+        lastButtonFlickerTick = millis();
+        break;
+      case COUNTDOWN   :
+        soundboard.setVolume(20);
+        resetSoundLevel = true;
+        soundboard.playSpecified(COUNTDOWN_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case MATCH       :
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, HIGH);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        updateClock();
+        break;
+      case ASSIST      :
+        soundboard.playSpecified(ASSIST_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, HIGH);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, HIGH);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        flickerLedState = HIGH;
+        lastButtonFlickerTick = millis();
+        break;
+      case PAUSED      :
+        soundboard.playSpecified(PAUSE_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, HIGH);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, HIGH);
+        digitalWrite(TIME_UP_LED, HIGH);
+        break;
+      case MATCH_END   :
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, HIGH);
+        digitalWrite(VICTORY_T2_LED, HIGH);
+        digitalWrite(TIME_DOWN_LED, LOW);
+        digitalWrite(TIME_UP_LED, LOW);
+        break;
+      case TAPOUT_T1   :
+        soundboard.playSpecified(TAPOUT_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, LOW);
+        digitalWrite(TIME_UP_LED, LOW);
+        lastTapoutTick = millis();
+        break;
+      case TAPOUT_T2   :
+        soundboard.playSpecified(TAPOUT_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, LOW);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, LOW);
+        digitalWrite(TIME_UP_LED, LOW);
+        lastTapoutTick = millis();
+        break;
+      case VICTORY_T1  :
+        soundboard.playSpecified(GREEN_TEAM_VICTORY_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, LOW);
+        digitalWrite(TIME_UP_LED, LOW);
+        break;
+      case VICTORY_T2  :
+        soundboard.playSpecified(ORANGE_TEAM_VICTORY_SOUND);
+        digitalWrite(MATCH_START_LED, LOW);
+        digitalWrite(MATCH_STOP_LED, LOW);
+        digitalWrite(MATCH_RESET_LED, HIGH);
+        digitalWrite(ASSIST_RESET_LED, LOW);
+        digitalWrite(VICTORY_T1_LED, LOW);
+        digitalWrite(VICTORY_T2_LED, LOW);
+        digitalWrite(TIME_DOWN_LED, LOW);
+        digitalWrite(TIME_UP_LED, LOW);
+        break;
+    }
 }

@@ -1,4 +1,5 @@
 #include <sys/_stdint.h>
+#include "common.h"
 #ifndef LARRY_H
 #define LARRY_H
 enum LarryButtonPins : uint8_t {MATCH_START_BUTTON = 35, MATCH_STOP_BUTTON = 12, MATCH_RESET_BUTTON = 13, MATCH_PLAY_PAUSE_BUTTON = 0, 
@@ -9,6 +10,9 @@ enum LarryLedPins : uint8_t {MATCH_START_LED = 32, MATCH_STOP_LED = 25, MATCH_RE
 enum SoundNums : uint16_t {READY_SOUND=1, ORANGE_TEAM_READY_SOUND, GREEN_TEAM_READY_SOUND, BOTH_TEAM_READY_SOUND,
                            COUNTDOWN_SOUND, ASSIST_SOUND, PAUSE_SOUND, FIGHT_SOUND, END_SOUND, ORANGE_TEAM_VICTORY_SOUND,
                            GREEN_TEAM_VICTORY_SOUND, TAPOUT_SOUND};
+
+// Create soundboard object using serial 2 (GPIO16 = RX, GPIO17 = TX)
+DY::Player soundboard(&Serial2);
 
 // void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len);

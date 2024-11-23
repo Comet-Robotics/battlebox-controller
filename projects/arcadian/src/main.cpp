@@ -10,6 +10,8 @@
 #define RGBLED_MAX_BRIGHTNESS 255
 #define RGBLED_FPS 120
 
+#include <Arduino.h>
+
 // ESP NOW
 #include <WiFi.h>
 #include <esp_now.h>
@@ -21,7 +23,7 @@
 #include <FastLED.h>
 
 #include "common.h"
-#include "arcadian.h"
+#include "main.h"
 
 // Track current state of system (controlled by Arcadian)
 StateName currentState = IDLE;
